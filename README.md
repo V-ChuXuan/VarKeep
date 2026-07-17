@@ -1,6 +1,8 @@
 # VarKeep
 
-<img src="v2/assets/branding/varkeep-mark.svg" alt="VarKeep" width="72">
+<p align="center">
+  <img src="v2/assets/branding/varkeep-mark.svg" alt="VarKeep" width="72">
+</p>
 
 VarKeep 是一个本地优先的 Windows 环境变量备份工具。它保存用户和系统环境变量、生成便于检查的脱敏摘要，并提供需要人工确认后才能运行的 PowerShell 还原脚本。
 
