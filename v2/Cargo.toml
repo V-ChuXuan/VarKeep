@@ -1,0 +1,30 @@
+[package]
+name = "varkeep"
+version = "2.3.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+description = "VarKeep - local-first Windows environment variable snapshots"
+publish = false
+
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+slint = { version = "=1.17.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_Registry", "Win32_System_Time"] }
+
+[build-dependencies]
+slint-build = "=1.17.1"
+winresource = "=0.1.31"
+
+[package.metadata.winresource]
+ProductName = "VarKeep"
+FileDescription = "VarKeep - Windows environment variable snapshots"
+OriginalFilename = "varkeep.exe"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+panic = "abort"
+strip = true

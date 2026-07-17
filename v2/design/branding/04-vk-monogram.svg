@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep VK Monogram</title>
+  <g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 24L36 76 54 24"/>
+    <path d="M60 24V76M60 52L80 27M60 52L82 76"/>
+  </g>
+</svg>

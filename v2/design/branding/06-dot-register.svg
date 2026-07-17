@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep Dot Register</title>
+  <defs>
+    <rect id="dot" width="11" height="11" rx="3" fill="currentColor"/>
+  </defs>
+  <g>
+    <use href="#dot" x="18" y="20"/>
+    <use href="#dot" x="71" y="20"/>
+    <use href="#dot" x="25" y="36"/>
+    <use href="#dot" x="64" y="36"/>
+    <use href="#dot" x="34" y="52"/>
+    <use href="#dot" x="55" y="52"/>
+    <use href="#dot" x="44.5" y="68"/>
+    <use href="#dot" x="71" y="52"/>
+    <use href="#dot" x="71" y="68"/>
+  </g>
+</svg>

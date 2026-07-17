@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep Kept V</title>
+  <path d="M20 24L48 76 72 32" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="81" cy="20" r="7" fill="currentColor"/>
+</svg>

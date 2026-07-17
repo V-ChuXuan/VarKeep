@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep Snapshot Frame</title>
+  <rect x="20" y="18" width="60" height="64" rx="9" fill="none" stroke="currentColor" stroke-width="7"/>
+  <g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round">
+    <path d="M34 36H66"/>
+    <path d="M34 50H58"/>
+    <path d="M34 64H69"/>
+  </g>
+</svg>

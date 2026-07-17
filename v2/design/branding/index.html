@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VarKeep — Logo 方向</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --ink: #20242b;
+      --muted: #66707d;
+      --line: #d7dbe1;
+      --soft: #eef1f5;
+      --mark: #26384f;
+      font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    button, a { font: inherit; }
+
+    .page {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: end;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 7px;
+      font-size: 36px;
+      line-height: 1.15;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      max-width: 620px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .controls button, .choose, .download {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 6px 11px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .controls button:hover, .choose:hover, .download:hover {
+      background: var(--soft);
+    }
+
+    .controls button:focus-visible, .choose:focus-visible, .download:focus-visible {
+      outline: 2px solid #5f83b3;
+      outline-offset: 2px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 24px;
+      padding: 24px 0 30px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .intro strong { color: var(--ink); font-weight: 600; }
+
+    .concepts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .concept {
+      min-width: 0;
+      padding: 28px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      transition: background 160ms ease;
+    }
+
+    .concept[data-selected="true"] { background: #edf3fa; }
+
+    .number {
+      margin-bottom: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stage {
+      min-height: 172px;
+      display: grid;
+      place-items: center;
+      color: var(--mark);
+    }
+
+    .stage svg { width: 132px; height: 132px; }
+
+    h2 {
+      margin: 4px 0 3px;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .rationale {
+      min-height: 63px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .wordmark {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 22px 0 16px;
+      padding: 11px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      color: var(--mark);
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .wordmark svg { width: 28px; height: 28px; flex: none; }
+
+    .sizes {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      height: 40px;
+      margin-bottom: 18px;
+      color: var(--mark);
+    }
+
+    .sizes svg:nth-child(1) { width: 16px; height: 16px; }
+    .sizes svg:nth-child(2) { width: 24px; height: 24px; }
+    .sizes svg:nth-child(3) { width: 36px; height: 36px; }
+
+    .actions { display: flex; gap: 6px; }
+    .choose, .download { font-size: 12px; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding-top: 24px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .concepts { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 620px) {
+      .page { width: min(100% - 24px, 1180px); padding-top: 28px; }
+      header { grid-template-columns: 1fr; align-items: start; }
+      .intro { grid-template-columns: 1fr; gap: 4px; }
+      .concepts { grid-template-columns: 1fr; }
+      .concept { padding: 24px; }
+      footer { display: block; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .concept { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <symbol id="logo-01" viewBox="0 0 100 100">
+        <path d="M20 24L48 76 72 32" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="81" cy="20" r="7" fill="currentColor"/>
+      </symbol>
+      <symbol id="logo-02" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M28 27V46Q28 58 40 58H50V76"/><path d="M72 27V46Q72 58 60 58H50"/></g><circle cx="28" cy="22" r="6" fill="currentColor"/><circle cx="72" cy="22" r="6" fill="currentColor"/>
+      </symbol>
+      <symbol id="logo-03" viewBox="0 0 100 100">
+        <rect x="20" y="18" width="60" height="64" rx="9" fill="none" stroke="currentColor" stroke-width="7"/><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><path d="M34 36H66"/><path d="M34 50H58"/><path d="M34 64H69"/></g>
+      </symbol>
+      <symbol id="logo-04" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 24L36 76 54 24"/><path d="M60 24V76M60 52L80 27M60 52L82 76"/></g>
+      </symbol>
+      <symbol id="logo-05" viewBox="0 0 100 100">
+        <g fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="25" y="20" width="50" height="50" rx="7" opacity="0.35"/><rect x="20" y="30" width="50" height="50" rx="7"/></g><circle cx="55" cy="45" r="6" fill="currentColor"/>
+      </symbol>
+      <symbol id="dot"><rect width="11" height="11" rx="3" fill="currentColor"/></symbol>
+      <symbol id="logo-06" viewBox="0 0 100 100">
+        <use href="#dot" x="18" y="20"/><use href="#dot" x="71" y="20"/><use href="#dot" x="25" y="36"/><use href="#dot" x="64" y="36"/><use href="#dot" x="34" y="52"/><use href="#dot" x="55" y="52"/><use href="#dot" x="44.5" y="68"/><use href="#dot" x="71" y="52"/><use href="#dot" x="71" y="68"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <main class="page">
+    <header>
+      <div>
+        <h1>VarKeep</h1>
+        <p>Windows environment variable snapshots. 六个图形方向，全部为单色矢量，优先保证 Windows 小图标尺寸的辨认度。</p>
+      </div>
+      <div class="controls" aria-label="预览颜色">
+        <button type="button" data-color="#26384f">深蓝灰</button>
+        <button type="button" data-color="#20242b">黑色</button>
+        <button type="button" data-color="#2f66a8">蓝色</button>
+      </div>
+    </header>
+
+    <section class="intro">
+      <strong>命名说明</strong>
+      <span>Var 表示环境变量，Keep 表示保存和留存。名字不使用 Vault、Safe 或 Lock，避免误导用户认为项目提供加密。</span>
+    </section>
+
+    <section class="concepts" aria-label="Logo 方向">
+      <article class="concept">
+        <div class="number">01 / 推荐</div>
+        <div class="stage"><svg aria-label="Kept V"><use href="#logo-01"/></svg></div>
+        <h2>Kept V</h2><p class="subtitle">Var 首字母 · 留存状态</p>
+        <p class="rationale">非对称 V 表示变量，独立状态点表示已保存的快照。结构最简单，在任务栏和窗口标题的小尺寸下最稳定。</p>
+        <div class="wordmark"><svg><use href="#logo-01"/></svg><span>VarKeep</span></div>
+        <div class="sizes" aria-label="尺寸测试"><svg><use href="#logo-01"/></svg><svg><use href="#logo-01"/></svg><svg><use href="#logo-01"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 01</button><a class="download" href="01-kept-lines.svg">SVG</a></div>
+      </article>
+
+      <article class="concept">
+        <div class="number">02</div>
+        <div class="stage"><svg aria-label="Twin Scope"><use href="#logo-02"/></svg></div>
+        <h2>Twin Scope</h2><p class="subtitle">用户范围 · 系统范围</p>
+        <p class="rationale">两个环境范围汇入同一个快照。概念最贴合产品，但外形容易让人联想到分支或合并。</p>
+        <div class="wordmark"><svg><use href="#logo-02"/></svg><span>VarKeep</span></div>
+        <div class="sizes"><svg><use href="#logo-02"/></svg><svg><use href="#logo-02"/></svg><svg><use href="#logo-02"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 02</button><a class="download" href="02-twin-scope.svg">SVG</a></div>
+      </article>
+
+      <article class="concept">
+        <div class="number">03</div>
+        <div class="stage"><svg aria-label="Snapshot Frame"><use href="#logo-03"/></svg></div>
+        <h2>Snapshot Frame</h2><p class="subtitle">快照容器 · 变量列表</p>
+        <p class="rationale">最直观的“快照文件”表达。熟悉、可靠，代价是品牌独特性弱于 01 和 02。</p>
+        <div class="wordmark"><svg><use href="#logo-03"/></svg><span>VarKeep</span></div>
+        <div class="sizes"><svg><use href="#logo-03"/></svg><svg><use href="#logo-03"/></svg><svg><use href="#logo-03"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 03</button><a class="download" href="03-snapshot-frame.svg">SVG</a></div>
+      </article>
+
+      <article class="concept">
+        <div class="number">04</div>
+        <div class="stage"><svg aria-label="VK Monogram"><use href="#logo-04"/></svg></div>
+        <h2>VK Monogram</h2><p class="subtitle">品牌首字母 · 几何字标</p>
+        <p class="rationale">直接建立 VarKeep 的名称识别，适合仓库头像；功能含义较弱，更像成熟品牌而不是工具图标。</p>
+        <div class="wordmark"><svg><use href="#logo-04"/></svg><span>VarKeep</span></div>
+        <div class="sizes"><svg><use href="#logo-04"/></svg><svg><use href="#logo-04"/></svg><svg><use href="#logo-04"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 04</button><a class="download" href="04-vk-monogram.svg">SVG</a></div>
+      </article>
+
+      <article class="concept">
+        <div class="number">05</div>
+        <div class="stage"><svg aria-label="Version Stack"><use href="#logo-05"/></svg></div>
+        <h2>Version Stack</h2><p class="subtitle">历史版本 · 当前快照</p>
+        <p class="rationale">重叠框代表历史备份，状态点代表当前记录。含义完整，但小尺寸的透明后层会略微减弱。</p>
+        <div class="wordmark"><svg><use href="#logo-05"/></svg><span>VarKeep</span></div>
+        <div class="sizes"><svg><use href="#logo-05"/></svg><svg><use href="#logo-05"/></svg><svg><use href="#logo-05"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 05</button><a class="download" href="05-version-stack.svg">SVG</a></div>
+      </article>
+
+      <article class="concept">
+        <div class="number">06</div>
+        <div class="stage"><svg aria-label="Dot Register"><use href="#logo-06"/></svg></div>
+        <h2>Dot Register</h2><p class="subtitle">离散变量 · V 形结构</p>
+        <p class="rationale">点阵隐约形成 V，并保留一列记录。最具数字感，但 16px 下辨识度需要重点验证。</p>
+        <div class="wordmark"><svg><use href="#logo-06"/></svg><span>VarKeep</span></div>
+        <div class="sizes"><svg><use href="#logo-06"/></svg><svg><use href="#logo-06"/></svg><svg><use href="#logo-06"/></svg></div>
+        <div class="actions"><button class="choose" type="button">选择 06</button><a class="download" href="06-dot-register.svg">SVG</a></div>
+      </article>
+    </section>
+
+    <footer><span>当前仅为方向稿，尚未写入应用。</span><span id="selection">尚未选择</span></footer>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    document.querySelectorAll('[data-color]').forEach((button) => {
+      button.addEventListener('click', () => root.style.setProperty('--mark', button.dataset.color));
+    });
+    document.querySelectorAll('.choose').forEach((button, index) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.concept').forEach((item) => item.dataset.selected = 'false');
+        button.closest('.concept').dataset.selected = 'true';
+        document.getElementById('selection').textContent = `已选择方向 ${String(index + 1).padStart(2, '0')}`;
+      });
+    });
+  </script>
+</body>
+</html>

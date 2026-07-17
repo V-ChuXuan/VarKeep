@@ -1,0 +1,11 @@
+# Sensitive local backup outputs
+v1/backups/
+v2/backups/
+
+# Local build and editor outputs
+.vs/
+v2/**/bin/
+v2/**/obj/
+v2/target/
+v2/publish/
+dist/

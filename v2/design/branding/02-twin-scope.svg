@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep Twin Scope</title>
+  <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 27V46Q28 58 40 58H50V76"/>
+    <path d="M72 27V46Q72 58 60 58H50"/>
+  </g>
+  <circle cx="28" cy="22" r="6" fill="currentColor"/>
+  <circle cx="72" cy="22" r="6" fill="currentColor"/>
+</svg>

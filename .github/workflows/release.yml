@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust 1.97.0
+        shell: pwsh
+        run: rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt --target x86_64-pc-windows-msvc
+
+      - name: Verify release tag
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\verify-release-tag.ps1 -Tag "$env:GITHUB_REF_NAME"
+
+      - name: Build and verify release archives
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\package-release.ps1
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: varkeep-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" .\dist\varkeep-v1-cli.zip .\dist\varkeep-v2-windows-x64.zip .\dist\SHA256SUMS.txt --verify-tag --generate-notes

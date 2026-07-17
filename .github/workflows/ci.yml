@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust 1.97.0
+        shell: pwsh
+        run: rustup toolchain install 1.97.0 --profile minimal --component clippy,rustfmt --target x86_64-pc-windows-msvc
+
+      - name: Verify v1 and v2 release
+        shell: pwsh
+        run: pwsh -NoProfile -File .\scripts\verify-release.ps1

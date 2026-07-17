@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">VarKeep Windows app icon</title>
+  <rect x="4" y="4" width="92" height="92" rx="18" fill="#26384f"/>
+  <path d="M22 27L48 75 70 35" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="79" cy="24" r="7" fill="#ffffff"/>
+</svg>

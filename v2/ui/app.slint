@@ -1,0 +1,704 @@
+import { AboutSlint, Button, CheckBox, ProgressIndicator, ScrollView } from "std-widgets.slint";
+
+export struct BackupRow {
+    id: string,
+    timestamp: string,
+    note: string,
+    selected: bool,
+    active: bool,
+    check-enabled: bool,
+}
+
+global Theme {
+    out property <color> chrome: #f4f5f7;
+    out property <color> surface: #ffffff;
+    out property <color> surface-hover: #f4f7fb;
+    out property <color> surface-selected: #eef5fc;
+    out property <color> ink: #22262d;
+    out property <color> ink-muted: #66707d;
+    out property <color> border: #d7dbe1;
+    out property <color> selected-border: #c8dcf4;
+    out property <color> accent: #245fba;
+    out property <color> success: #26734d;
+    out property <color> error: #a12f3b;
+}
+
+component DangerButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    width: 70px;
+    height: 32px;
+    border-radius: 4px;
+    background: !root.enabled ? #d6aeb3 : danger-touch.pressed ? #7f2530 : danger-touch.has-hover ? #892933 : Theme.error;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled { root.clicked(); }
+    }
+    forward-focus: danger-focus;
+
+    Text {
+        text: root.text;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    danger-touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    danger-focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    if danger-focus.has-focus: Rectangle {
+        x: -2px;
+        y: -2px;
+        width: parent.width + 4px;
+        height: parent.height + 4px;
+        border-width: 2px;
+        border-color: #76a7ee;
+        border-radius: 5px;
+    }
+}
+
+component FlatLineEdit inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder-text;
+    in property <bool> enabled: true;
+    callback edited(string);
+    callback accepted(string);
+
+    public function select-all-input() { input.select-all(); }
+
+    height: 32px;
+    background: root.enabled ? Theme.surface : #f1f2f4;
+    border-width: 1px;
+    border-color: input.has-focus ? #858b94 : #bfc4cb;
+    border-radius: 3px;
+    clip: true;
+    forward-focus: input;
+
+    Text {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text: root.text == "" && input.preedit-text == "" ? root.placeholder-text : "";
+        color: Theme.ink-muted;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+        accessible-role: none;
+    }
+
+    input := TextInput {
+        x: 8px;
+        width: max(parent.width - 16px, self.preferred-width);
+        height: parent.height;
+        text <=> root.text;
+        enabled: root.enabled;
+        single-line: true;
+        color: Theme.ink;
+        font-size: 13px;
+        vertical-alignment: center;
+        accessible-placeholder-text: root.placeholder-text;
+        cursor-position-changed(position) => {
+            if position.x + self.x < 8px {
+                self.x = 8px - position.x;
+            } else if position.x + self.x > parent.width - 8px - self.text-cursor-width {
+                self.x = parent.width - 8px - position.x - self.text-cursor-width;
+            }
+        }
+        edited => { root.edited(self.text); }
+        accepted => { root.accepted(self.text); }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: root.window-title-text;
+    icon: @image-url("../assets/branding/varkeep-app-icon.svg");
+    preferred-width: 760px;
+    preferred-height: 380px;
+    min-width: 700px;
+    min-height: 340px;
+    background: Theme.surface;
+
+    in property <string> window-title-text: "VarKeep v2.3";
+    in property <string> status-text: "Ready";
+    in property <int> status-tone: 0;
+    in property <bool> status-visible: false;
+    in property <[BackupRow]> backup-rows: [];
+    in property <bool> has-backups: false;
+    in property <bool> has-invalid-backups: false;
+    in property <string> invalid-backup-text: "";
+    in property <int> selection-count: 0;
+    in property <string> selection-count-text: "";
+    in property <string> compare-action-text: "Compare selected";
+    in property <string> comparison-title-text: "Comparison";
+    in property <string> comparison-detail-text: "";
+    in property <bool> comparison-visible: false;
+    in property <string> backup-time-text: "Backup time";
+    in property <string> note-text: "Note";
+    in property <string> add-note-text: "Add note";
+    in property <string> edit-note-title-text: "Edit note";
+    in property <string> note-placeholder-text: "Enter a note";
+    in property <string> save-text: "Save";
+    in property <string> actions-text: "Actions";
+    in property <string> create-text: "Create backup";
+    in property <string> working-text: "Working…";
+    in property <string> view-summary-text: "View summary";
+    in property <string> open-location-text: "Open location";
+    in property <string> delete-text: "Delete";
+    in property <string> cancel-text: "Cancel";
+    in property <string> about-text: "About";
+    in property <string> close-text: "Close";
+    in property <string> language-button-text: "中文";
+    in property <string> empty-text: "No backups yet";
+    in property <string> about-title-text: "About VarKeep v2.3";
+    in property <string> about-body-text: "MIT License";
+    in property <string> delete-title-text: "Delete backup";
+    in property <string> delete-prompt-text: "";
+    in property <string> delete-irreversible-text: "This action cannot be undone.";
+    in property <bool> busy: false;
+    in property <bool> delete-confirm-visible: false;
+    in property <bool> note-editor-visible: false;
+    in-out property <string> note-editor-text: "";
+    in-out property <bool> about-visible: false;
+
+    callback toggle-language();
+    callback create-backup();
+    callback activate-backup(string);
+    callback toggle-backup-selection(string);
+    callback clear-backup-selection();
+    callback compare-selected();
+    callback close-comparison();
+    callback view-summary(string);
+    callback open-backup(string);
+    callback request-note-edit(string);
+    callback note-draft-changed(string);
+    callback save-note(string);
+    callback cancel-note-edit();
+    callback request-delete(string);
+    callback confirm-delete();
+    callback cancel-delete();
+
+    toolbar := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: 48px;
+        background: Theme.chrome;
+        border-width: 1px;
+        border-color: Theme.border;
+
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 8px;
+
+            Button {
+                width: 96px;
+                height: 32px;
+                text: root.busy ? root.working-text : root.create-text;
+                enabled: !root.busy;
+                clicked => { root.create-backup(); }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: root.status-text;
+                visible: root.status-visible;
+                color: root.status-tone == 3 ? Theme.error : root.status-tone == 2 ? Theme.success : Theme.ink-muted;
+                font-size: 12px;
+                font-weight: root.status-tone == 3 || root.status-tone == 2 ? 600 : 400;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Button {
+                width: 68px;
+                height: 32px;
+                text: root.about-text;
+                enabled: !root.busy;
+                clicked => { root.about-visible = true; }
+            }
+        }
+
+        if root.busy: ProgressIndicator {
+            x: 0px;
+            y: 45px;
+            width: parent.width;
+            height: 3px;
+            indeterminate: true;
+        }
+    }
+
+    content := Rectangle {
+        x: 0px;
+        y: 48px;
+        width: root.width;
+        height: root.height - 48px;
+        background: Theme.surface;
+        clip: true;
+
+        VerticalLayout {
+            spacing: 0px;
+
+            if root.selection-count > 0: Rectangle {
+                height: 38px;
+                background: #f7f9fc;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 10px;
+                    padding-top: 5px;
+                    padding-bottom: 5px;
+                    spacing: 6px;
+
+                    Text {
+                        text: root.selection-count-text;
+                        color: Theme.ink;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    Button {
+                        width: root.selection-count == 1 ? 160px : 112px;
+                        height: 28px;
+                        text: root.compare-action-text;
+                        enabled: !root.busy;
+                        clicked => { root.compare-selected(); }
+                    }
+                    Button {
+                        width: 64px;
+                        height: 28px;
+                        text: root.cancel-text;
+                        enabled: !root.busy;
+                        clicked => { root.clear-backup-selection(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 34px;
+                background: #fafafa;
+                border-width: 1px;
+                border-color: Theme.border;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 0px;
+                    Rectangle { width: 28px; }
+                    Text { width: 170px; text: root.backup-time-text; color: Theme.ink-muted; font-size: 12px; vertical-alignment: center; }
+                    Text { text: root.note-text; color: Theme.ink-muted; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                    Text { width: 230px; text: root.actions-text; color: Theme.ink-muted; font-size: 12px; vertical-alignment: center; }
+                }
+            }
+
+            ScrollView {
+                min-width: 0px;
+                vertical-stretch: 1;
+
+                if root.has-backups: VerticalLayout {
+                    width: parent.width;
+                    spacing: 0px;
+
+                    for row in root.backup-rows: row-background := Rectangle {
+                        height: 44px;
+                        background: row.active ? Theme.surface-selected : row-touch.has-hover ? Theme.surface-hover : Theme.surface;
+                        border-width: row.active ? 1px : 0px;
+                        border-color: Theme.selected-border;
+
+                        row-touch := TouchArea {
+                            clicked => { root.activate-backup(row.id); }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 0px;
+
+                            row-check := CheckBox {
+                                width: 28px;
+                                text: "";
+                                accessible-label: root.backup-time-text + " " + row.timestamp;
+                                checked: row.selected;
+                                enabled: !root.busy && row.check-enabled;
+                                toggled => { root.toggle-backup-selection(row.id); }
+                                changed has-focus => {
+                                    if (self.has-focus) { root.activate-backup(row.id); }
+                                }
+                            }
+                            Text {
+                                width: 170px;
+                                text: row.timestamp;
+                                color: row.active ? #17446f : Theme.ink;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            note-cell := Rectangle {
+                                horizontal-stretch: 1;
+                                accessible-role: button;
+                                accessible-label: root.note-text + " " + (row.note == "" ? root.add-note-text : row.note);
+                                accessible-enabled: !root.busy;
+                                accessible-action-default => {
+                                    if !root.busy { root.request-note-edit(row.id); }
+                                }
+
+                                Text {
+                                    x: 0px;
+                                    width: parent.width - 8px;
+                                    height: parent.height;
+                                    text: row.note == "" ? root.add-note-text : row.note;
+                                    visible: row.note != "" || row.active || note-touch.has-hover;
+                                    color: row.note == "" ? Theme.ink-muted : Theme.ink;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                note-touch := TouchArea {
+                                    enabled: !root.busy;
+                                    clicked => {
+                                        root.activate-backup(row.id);
+                                        root.request-note-edit(row.id);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                width: 230px;
+                                spacing: 4px;
+                                padding-top: 8px;
+                                padding-bottom: 8px;
+                                alignment: end;
+
+                                Button {
+                                    width: 86px;
+                                    height: 28px;
+                                    visible: row.active || row-touch.has-hover;
+                                    text: root.view-summary-text;
+                                    enabled: !root.busy;
+                                    clicked => { root.view-summary(row.id); }
+                                }
+                                Button {
+                                    width: 86px;
+                                    height: 28px;
+                                    visible: row.active || row-touch.has-hover;
+                                    text: root.open-location-text;
+                                    enabled: !root.busy;
+                                    clicked => { root.open-backup(row.id); }
+                                }
+                                Button {
+                                    width: 52px;
+                                    height: 28px;
+                                    visible: row.active || row-touch.has-hover;
+                                    text: root.delete-text;
+                                    enabled: !root.busy;
+                                    clicked => { root.request-delete(row.id); }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: #eceef1;
+                        }
+                    }
+                }
+
+                if !root.has-backups: Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.empty-text;
+                    color: Theme.ink-muted;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.has-invalid-backups: Rectangle {
+                height: 30px;
+                background: #fff5f5;
+                border-width: 1px;
+                border-color: #efc7cb;
+                Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    text: root.invalid-backup-text;
+                    color: Theme.error;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+        }
+    }
+
+    if root.comparison-visible: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: #66000000;
+
+        TouchArea { }
+
+        Rectangle {
+            width: 520px;
+            height: 286px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: #9da3ac;
+            border-radius: 4px;
+
+            VerticalLayout {
+                spacing: 0px;
+                Text {
+                    height: 46px;
+                    text: root.comparison-title-text;
+                    color: Theme.ink;
+                    font-size: 16px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 12px;
+                        padding-bottom: 12px;
+                        Text {
+                            text: root.comparison-detail-text;
+                            color: Theme.ink;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                HorizontalLayout {
+                    height: 50px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { width: 72px; text: root.close-text; clicked => { root.close-comparison(); } }
+                }
+            }
+        }
+    }
+
+    if root.about-visible: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: #66000000;
+
+        TouchArea { }
+
+        Rectangle {
+            width: 360px;
+            height: 286px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: #9da3ac;
+            border-radius: 4px;
+
+            VerticalLayout {
+                spacing: 0px;
+
+                Text {
+                    height: 46px;
+                    text: root.about-title-text;
+                    color: Theme.ink;
+                    font-size: 16px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                Text {
+                    height: 42px;
+                    text: root.about-body-text;
+                    color: Theme.ink-muted;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                    AboutSlint {
+                        width: 280px;
+                        height: 130px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                HorizontalLayout {
+                    height: 48px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 6px;
+                    Button { width: 92px; text: root.language-button-text; clicked => { root.toggle-language(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { width: 72px; text: root.close-text; clicked => { root.about-visible = false; } }
+                }
+            }
+        }
+    }
+
+    if root.delete-confirm-visible: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: #66000000;
+
+        TouchArea { }
+
+        Rectangle {
+            width: 340px;
+            height: 188px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: #9da3ac;
+            border-radius: 4px;
+
+            VerticalLayout {
+                spacing: 0px;
+                Text {
+                    height: 46px;
+                    text: root.delete-title-text;
+                    color: Theme.ink;
+                    font-size: 16px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                VerticalLayout {
+                    vertical-stretch: 1;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 14px;
+                    padding-bottom: 10px;
+                    spacing: 4px;
+                    Text { text: root.delete-prompt-text; color: Theme.ink; font-size: 13px; wrap: word-wrap; }
+                    Text { text: root.delete-irreversible-text; color: Theme.ink-muted; font-size: 12px; }
+                }
+                HorizontalLayout {
+                    height: 50px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    spacing: 6px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { width: 70px; text: root.cancel-text; clicked => { root.cancel-delete(); } }
+                    DangerButton { text: root.delete-text; enabled: !root.busy; clicked => { root.confirm-delete(); } }
+                }
+            }
+        }
+    }
+
+    if root.note-editor-visible: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: #66000000;
+
+        TouchArea { }
+
+        Rectangle {
+            width: 390px;
+            height: 156px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: #9da3ac;
+            border-radius: 4px;
+            init => {
+                note-input.focus();
+                note-input.select-all-input();
+            }
+
+            VerticalLayout {
+                spacing: 0px;
+                Text {
+                    height: 46px;
+                    text: root.edit-note-title-text;
+                    color: Theme.ink;
+                    font-size: 16px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    vertical-stretch: 1;
+                    note-input := FlatLineEdit {
+                        x: 14px;
+                        y: 12px;
+                        width: parent.width - 28px;
+                        height: 32px;
+                        text <=> root.note-editor-text;
+                        placeholder-text: root.note-placeholder-text;
+                        enabled: !root.busy;
+                        edited(value) => { root.note-draft-changed(value); }
+                        accepted(value) => { root.save-note(value); }
+                    }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                HorizontalLayout {
+                    height: 50px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    spacing: 6px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { width: 70px; text: root.cancel-text; enabled: !root.busy; clicked => { root.cancel-note-edit(); } }
+                    Button { width: 70px; text: root.save-text; enabled: !root.busy; clicked => { root.save-note(root.note-editor-text); } }
+                }
+            }
+        }
+    }
+}
