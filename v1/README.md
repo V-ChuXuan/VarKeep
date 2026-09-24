@@ -1,16 +1,16 @@
 # VarKeep v1 · PowerShell CLI/TUI
 
-VarKeep v1 是 Windows 环境变量快照工具的 PowerShell 7 版本。它适合命令行、自动化脚本和偏好数字菜单的用户，与 v2 GUI 的源码和备份目录完全独立。
+VarKeep v1 是 Windows 环境变量快照工具的 PowerShell 7 版本，适合命令行、自动化脚本和偏好数字菜单的用户。它与 v2 GUI 的源码和备份目录完全独立。
 
-## 要求
+## 运行要求
 
 - Windows 10/11。
 - PowerShell 7（`pwsh.exe`）。
 - 创建备份不需要管理员权限；系统范围还原脚本需要管理员权限。
 
-## 使用
+## 快速开始
 
-从项目 Releases 下载并解压 `varkeep-v1-cli.zip`。双击：
+从 [VarKeep Releases](https://github.com/V-ChuXuan/VarKeep/releases) 下载并解压 `varkeep-v1-cli.zip`。双击：
 
 ```text
 start-interactive.cmd
@@ -72,7 +72,7 @@ backups/comparisons/<备份名>/compare-current-YYYYMMDD-HHmmss.md
 
 默认报告显示变量名和 PATH 条目差异。只有显式添加 `-IncludeValuesInReports` 才会写入完整旧值和当前值；这种报告与快照同样敏感。
 
-## 完整性与安全边界
+## 完整性与安全说明
 
 工具会限制目录枚举和文件大小，拒绝异常布局、reparse point、损坏快照，以及与快照不一致的摘要或还原脚本。这是防误操作和发现普通损坏的完整性检查，不是数字签名，无法证明备份没有被拥有本机写权限的攻击者整体替换。
 
