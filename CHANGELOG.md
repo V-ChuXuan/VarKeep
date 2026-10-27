@@ -2,6 +2,22 @@
 
 All notable user-visible changes to VarKeep are recorded here.
 
+## 2.4.0 - 2026-10-27
+
+- 用 Windows 原生列表、按钮和模态对话框替换 Slint，不再需要额外的界面署名组件；保留第三方许可证文本。
+- 修复 v1 创建第 65 份备份后无法列出历史的问题，在写入前检查容量。
+- 无效备份可查看目录名和原因；比较结果标明基准与目标，并解释 PATH 仅顺序变化。
+- 备注采用临时写入后原子替换，失败保留旧内容和编辑草稿，并在当前对话框提示错误。
+- 补齐键盘入口，默认回归使用合成数据，保留旧备份模板兼容夹具，移除绑定 Slint 排版的源码正则检查。
+
+### 其他修复
+
+- Preserve v1 value case and registry-kind changes in comparisons; support empty environment scopes.
+- Check v2 backup capacity before writing, while allowing recovery from externally added excess backups.
+- Resolve and validate selected backups directly, retaining path and artifact checks without repeatedly validating all siblings.
+- Count linked backup candidates as invalid and provide specific localized capacity-recovery guidance.
+- Add synthetic comparison, capacity, selected-access and path-boundary regressions.
+
 ## 2.3.0 - 2026-07-17
 
 ### Added

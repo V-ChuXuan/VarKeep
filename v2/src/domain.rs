@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::privacy::redact_path_entry;
@@ -163,6 +163,7 @@ pub struct ComparisonSummary {
     pub unchanged: usize,
     pub changes: Vec<ChangeRecord>,
     pub path_changes: Vec<PathChangeRecord>,
+    pub path_order_changed: Vec<Scope>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,19 +233,27 @@ pub fn compare_snapshots(
             kind: record_kind,
         });
     }
-    result.path_changes = compare_path_entries(&left, &right);
+    (result.path_changes, result.path_order_changed) = compare_path_entries(&left, &right);
     result
 }
 
 fn compare_path_entries(
     baseline: &BTreeMap<(Scope, String), &EnvironmentVariable>,
     current: &BTreeMap<(Scope, String), &EnvironmentVariable>,
-) -> Vec<PathChangeRecord> {
+) -> (Vec<PathChangeRecord>, Vec<Scope>) {
     let mut changes = Vec::new();
+    let mut reordered = Vec::new();
     for scope in [Scope::User, Scope::System] {
         let key = (scope, "PATH".to_owned());
         let baseline_entries = path_entry_map(baseline.get(&key).map(|item| item.value.expose()));
         let current_entries = path_entry_map(current.get(&key).map(|item| item.value.expose()));
+
+        if baseline_entries.keys().eq(current_entries.keys())
+            && path_entry_sequence(baseline.get(&key).map(|item| item.value.expose()))
+                != path_entry_sequence(current.get(&key).map(|item| item.value.expose()))
+        {
+            reordered.push(scope);
+        }
 
         changes.extend(
             baseline_entries
@@ -267,7 +276,19 @@ fn compare_path_entries(
                 }),
         );
     }
-    changes
+    (changes, reordered)
+}
+
+fn path_entry_sequence(value: Option<&str>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    value
+        .unwrap_or_default()
+        .split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_uppercase)
+        .filter(|entry| seen.insert(entry.clone()))
+        .collect()
 }
 
 fn path_entry_map(value: Option<&str>) -> BTreeMap<String, String> {
@@ -409,5 +430,34 @@ mod tests {
             .code(),
             "value_contains_nul"
         );
+    }
+
+    #[test]
+    fn path_order_only_changes_are_reported_for_the_correct_scope() {
+        let baseline = vec![variable(
+            "Path",
+            r"C:\First;C:\Second",
+            RegistryValueKind::String,
+        )];
+        let current = vec![variable(
+            "PATH",
+            r"c:\second;C:\First",
+            RegistryValueKind::String,
+        )];
+        let comparison = compare_snapshots(&baseline, &current);
+        assert_eq!(comparison.path_order_changed, vec![Scope::User]);
+        assert!(comparison.path_changes.is_empty());
+        for value in [
+            r"c:\first;C:\Second",
+            r"C:\First;C:\First;C:\Second",
+            r"C:\Third;C:\First;C:\Second",
+        ] {
+            let current = vec![variable("Path", value, RegistryValueKind::String)];
+            assert!(
+                compare_snapshots(&baseline, &current)
+                    .path_order_changed
+                    .is_empty()
+            );
+        }
     }
 }

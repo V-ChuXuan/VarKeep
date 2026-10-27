@@ -50,6 +50,48 @@ try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
     [Environment]::SetEnvironmentVariable($secretName, $secretBefore, "Process")
 
+    # Exercise the real CLI and menus with only its two host readers replaced.
+    $syntheticReaders = @{
+        'Get-ProcessEnvironment' = @'
+function Get-ProcessEnvironment {
+    @(
+        [ordered]@{ name = 'ENV_VAR_BACKUP_TEST_SECRET'; value = [Environment]::GetEnvironmentVariable('ENV_VAR_BACKUP_TEST_SECRET', 'Process'); kind = 'Process' },
+        [ordered]@{ name = 'Path'; value = 'C:\Users\SyntheticUser\bin;C:\Tools'; kind = 'Process' }
+    )
+}
+'@
+        'Get-RegistryEnvironment' = @'
+function Get-RegistryEnvironment {
+    param([string]$RegistryPath)
+    if ($RegistryPath -eq 'HKCU:\Environment') {
+        @(
+            [ordered]@{ name = 'USER_FIXTURE'; value = 'synthetic-user-value'; kind = 'String' },
+            [ordered]@{ name = 'Path'; value = '%USERPROFILE%\bin'; kind = 'ExpandString' }
+        )
+    } elseif ($RegistryPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment') {
+        @([ordered]@{ name = 'SYSTEM_FIXTURE'; value = '%SystemRoot%'; kind = 'ExpandString' })
+    } else {
+        throw 'Unexpected synthetic registry scope.'
+    }
+}
+'@
+    }
+    $sourceText = [IO.File]::ReadAllText($scriptPath)
+    $sourceTokens = $null
+    $sourceErrors = $null
+    $sourceAst = [System.Management.Automation.Language.Parser]::ParseInput($sourceText, [ref]$sourceTokens, [ref]$sourceErrors)
+    if ($sourceErrors.Count) { throw 'Tool source could not be parsed.' }
+    $readerNodes = @($sourceAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $syntheticReaders.ContainsKey($node.Name)
+    }, $false) | Sort-Object { $_.Extent.StartOffset } -Descending)
+    if ($readerNodes.Count -ne 2) { throw 'Expected exactly two environment readers to isolate.' }
+    foreach ($node in $readerNodes) {
+        $sourceText = $sourceText.Remove($node.Extent.StartOffset, $node.Extent.EndOffset - $node.Extent.StartOffset).Insert($node.Extent.StartOffset, $syntheticReaders[$node.Name])
+    }
+    $scriptPath = Join-Path $testRoot 'backup-env.ps1'
+    [IO.File]::WriteAllText($scriptPath, $sourceText, [Text.UTF8Encoding]::new($false))
+
     $help = Invoke-Tool -Arguments @("--help")
     Assert-True -Condition ($help.ExitCode -eq 0) -Name "help exits successfully"
     Assert-True -Condition (($help.Output -join "`n") -match "IncludeValuesInReports") -Name "help documents detailed report opt-in"
@@ -75,12 +117,15 @@ try {
         Assert-True -Condition ($snapshotText.Contains($secretBefore)) -Name "raw snapshot retains environment values"
         Assert-True -Condition (-not $summaryText.Contains($secretBefore)) -Name "default summary hides environment values"
         Assert-True -Condition ($summaryText.Contains($secretName)) -Name "default summary retains variable names"
-        Assert-True -Condition (-not $summaryText.Contains($env:USERNAME)) -Name "summary redacts the Windows user identity"
+        Assert-True -Condition (-not $summaryText.Contains('SyntheticUser')) -Name "summary redacts the synthetic Windows user identity"
         Assert-True -Condition (-not (Test-Path -LiteralPath $summaryTxtPath)) -Name "backup no longer creates duplicate summary.txt"
         Assert-True -Condition (Test-Path -LiteralPath $userRestorePath) -Name "backup creates a user restore script by default"
         Assert-True -Condition (Test-Path -LiteralPath $machineRestorePath) -Name "backup creates a machine restore script by default"
         Assert-True -Condition (Test-Path -LiteralPath $allRestorePath) -Name "backup creates a combined restore script by default"
         $snapshot = $snapshotText | ConvertFrom-Json
+        Assert-True -Condition ((@($snapshot.environment.process.name | Sort-Object) -join ',') -ceq 'ENV_VAR_BACKUP_TEST_SECRET,Path') -Name "CLI snapshot contains only the synthetic process variables"
+        Assert-True -Condition ((@($snapshot.environment.user.name | Sort-Object) -join ',') -ceq 'Path,USER_FIXTURE') -Name "CLI snapshot contains only the synthetic user variables"
+        Assert-True -Condition (@($snapshot.environment.machine).Count -eq 1 -and $snapshot.environment.machine[0].name -ceq 'SYSTEM_FIXTURE' -and $snapshot.environment.machine[0].value -ceq '%SystemRoot%') -Name "CLI snapshot contains only the synthetic system variable"
         Assert-True -Condition (@($snapshot.environment.user | Where-Object { $_.kind -notin @("String", "ExpandString") }).Count -eq 0) -Name "snapshot records user registry value kinds"
         Assert-True -Condition (@($snapshot.environment.machine | Where-Object { $_.kind -notin @("String", "ExpandString") }).Count -eq 0) -Name "snapshot records machine registry value kinds"
         Assert-True -Condition (($backup.Output -join "`n").Contains($backupDirectory.FullName)) -Name "CLI backup output retains the absolute backup path"
@@ -176,9 +221,9 @@ try {
     $storedFixture = Get-Content -LiteralPath (Join-Path $fixtureDirectory "snapshot.json") -Raw | ConvertFrom-Json
     [System.IO.File]::WriteAllText((Join-Path $fixtureDirectory "summary.md"), (New-SummaryMarkdown -Snapshot $storedFixture -SelectedLanguage "en"), [System.Text.UTF8Encoding]::new($false))
     [void](New-RestoreScripts -BackupDirectory (Get-Item -LiteralPath $fixtureDirectory) -Text (Get-UiText -SelectedLanguage "en") -Quiet $true)
-    $beforeRestore = [Environment]::GetEnvironmentVariable($restoreSecretName, "User")
+    $beforeRestore = [Environment]::GetEnvironmentVariable($secretName, "Process")
     $restore = Invoke-Tool -Arguments @("restore-script", $fixtureDirectory, "-OutputRoot", $fixtureRoot, "-Language", "en")
-    $afterRestore = [Environment]::GetEnvironmentVariable($restoreSecretName, "User")
+    $afterRestore = [Environment]::GetEnvironmentVariable($secretName, "Process")
     $restoreScriptText = Get-Content -LiteralPath (Join-Path $fixtureDirectory "restore/user.ps1") -Raw
     $allRestoreText = Get-Content -LiteralPath (Join-Path $fixtureDirectory "restore/all.ps1") -Raw
     Assert-True -Condition ($restore.ExitCode -eq 0) -Name "restore-script command exits successfully"
@@ -186,7 +231,7 @@ try {
     Assert-True -Condition ($restoreScriptText.Contains("RegistryValueKind]::ExpandString")) -Name "restore script preserves REG_EXPAND_SZ"
     Assert-True -Condition ($restoreScriptText.Contains("RegistryValueKind]::String")) -Name "restore script preserves REG_SZ and empty strings"
     Assert-True -Condition ($allRestoreText.IndexOf("Administrator") -lt $allRestoreText.IndexOf("SetValue")) -Name "combined restore script checks administrator rights before writes"
-    Assert-True -Condition ($beforeRestore -eq $afterRestore) -Name "restore-script does not modify the environment"
+    Assert-True -Condition ($beforeRestore -eq $afterRestore) -Name "restore-script leaves the process test sentinel unchanged"
 
     $astChecker = Join-Path $projectRoot "scripts/check-script-ast.ps1"
     if (-not (Test-Path -LiteralPath $astChecker -PathType Leaf)) {
@@ -337,6 +382,12 @@ try {
     Assert-True -Condition ($failedDirectories.Count -eq 0) -Name "failed backup removes its partial directory"
 } finally {
     [Environment]::SetEnvironmentVariable($secretName, $originalSecret, "Process")
+    $absoluteTestRoot = [IO.Path]::GetFullPath($testRoot)
+    $absoluteTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $absoluteTestRoot.StartsWith($absoluteTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        -not [IO.Path]::GetFileName($absoluteTestRoot).StartsWith('env-var-backup-tests-')) {
+        throw 'Test cleanup escaped its own temporary directory.'
+    }
     if (Test-Path -LiteralPath $testRoot) {
         Remove-Item -LiteralPath $testRoot -Recurse -Force
     }

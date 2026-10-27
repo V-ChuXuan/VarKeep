@@ -277,6 +277,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "reads the real host registry; run explicitly as an integration check"]
     fn persistent_registry_values_can_be_read_without_exposing_them() {
         let values = read_persistent_environment().expect("persistent registry should be readable");
         assert!(values.iter().all(|value| {

@@ -1,12 +1,14 @@
-use crate::domain::Snapshot;
+use crate::domain::{Snapshot, compare_snapshots};
 use crate::storage::{
-    BackupListing, BackupRecord, compare_named_backups, create_backup_with_language,
+    BackupListing, BackupRecord, InvalidBackup, compare_backup_order, create_backup_with_language,
     delete_named_backup, list_backups_with_diagnostics, now_unix_ms, resolve_named_backup,
-    update_backup_note, validate_backup_directory,
+    resolve_named_snapshot, update_backup_note,
 };
 use crate::summary::SummaryLanguage;
 use crate::ui_adapter::UiStatus;
-use crate::windows::{open_directory, open_file, read_persistent_environment};
+use crate::windows::{
+    format_local_timestamp, open_directory, open_file, read_persistent_environment,
+};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
@@ -30,6 +32,7 @@ pub enum UiEvent {
         status: UiStatus,
         records: Vec<BackupRecord>,
         invalid_count: usize,
+        invalid_backups: Vec<InvalidBackup>,
     },
     Error {
         code: &'static str,
@@ -73,10 +76,11 @@ fn run_worker(base: PathBuf, jobs: Receiver<Job>, events: Sender<UiEvent>) {
         }
         let result = handle_job(&root, job);
         let event = match result {
-            Ok((status, records, invalid_count)) => UiEvent::Ready {
+            Ok((status, listing)) => UiEvent::Ready {
                 status,
-                records,
-                invalid_count,
+                records: listing.records,
+                invalid_count: listing.invalid_count,
+                invalid_backups: listing.invalid_backups,
             },
             Err(code) => UiEvent::Error {
                 code,
@@ -89,18 +93,11 @@ fn run_worker(base: PathBuf, jobs: Receiver<Job>, events: Sender<UiEvent>) {
     }
 }
 
-fn handle_job(
-    root: &std::path::Path,
-    job: Job,
-) -> Result<(UiStatus, Vec<BackupRecord>, usize), &'static str> {
-    match job {
+fn handle_job(root: &std::path::Path, job: Job) -> Result<(UiStatus, BackupListing), &'static str> {
+    let status = match job {
         Job::Refresh => {
             let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::BackupsFound(listing.records.len()),
-                listing.records,
-                listing.invalid_count,
-            ))
+            return Ok((UiStatus::BackupsFound(listing.records.len()), listing));
         }
         Job::CreateBackup { language } => {
             let variables = read_persistent_environment().map_err(|error| error.code())?;
@@ -108,100 +105,80 @@ fn handle_job(
                 Snapshot::new_v2(now_unix_ms(), variables).map_err(|error| error.code())?;
             let record = create_backup_with_language(root, &snapshot, language)
                 .map_err(|error| error.code())?;
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::BackupCreated(record.name),
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::BackupCreated(record.name)
         }
         Job::CompareWithCurrent { name } => {
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            let record = listing
-                .records
-                .iter()
-                .find(|record| record.name == name)
-                .ok_or("backup_not_found")?;
-            let snapshot =
-                validate_backup_directory(&record.directory).map_err(|error| error.code())?;
+            let (record, snapshot) =
+                resolve_named_snapshot(root, &name).map_err(|error| error.code())?;
             let current = read_persistent_environment().map_err(|error| error.code())?;
             let summary = crate::storage::compare_backup_with(&snapshot, &current);
-            Ok((
-                UiStatus::Comparison(summary),
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::Comparison {
+                summary,
+                baseline: comparison_label(&record),
+                current: None,
+            }
         }
         Job::CompareBackups { first, second } => {
             if first == second {
                 return Err("same_backup");
             }
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            let first_index = listing
-                .records
-                .iter()
-                .position(|record| record.name == first)
-                .ok_or("backup_not_found")?;
-            let second_index = listing
-                .records
-                .iter()
-                .position(|record| record.name == second)
-                .ok_or("backup_not_found")?;
-            let (baseline, current) = if first_index > second_index {
-                (&first, &second)
-            } else {
-                (&second, &first)
-            };
-            let summary =
-                compare_named_backups(root, baseline, current).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::Comparison(summary),
-                listing.records,
-                listing.invalid_count,
-            ))
+            let (first_record, first_snapshot) =
+                resolve_named_snapshot(root, &first).map_err(|error| error.code())?;
+            let (second_record, second_snapshot) =
+                resolve_named_snapshot(root, &second).map_err(|error| error.code())?;
+            let (baseline, current, baseline_record, current_record) =
+                if compare_backup_order(&first_record, &second_record).is_gt() {
+                    (
+                        &first_snapshot,
+                        &second_snapshot,
+                        &first_record,
+                        &second_record,
+                    )
+                } else {
+                    (
+                        &second_snapshot,
+                        &first_snapshot,
+                        &second_record,
+                        &first_record,
+                    )
+                };
+            let summary = compare_snapshots(&baseline.variables, &current.variables);
+            UiStatus::Comparison {
+                summary,
+                baseline: comparison_label(baseline_record),
+                current: Some(comparison_label(current_record)),
+            }
         }
         Job::ViewSummary { name } => {
             let record = resolve_named_backup(root, &name).map_err(|error| error.code())?;
-            validate_backup_directory(&record.directory).map_err(|error| error.code())?;
             open_file(&record.directory.join("summary.md")).map_err(|error| error.code())?;
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::SummaryOpened,
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::SummaryOpened
         }
         Job::OpenBackup { name } => {
             let record = resolve_named_backup(root, &name).map_err(|error| error.code())?;
-            validate_backup_directory(&record.directory).map_err(|error| error.code())?;
             open_directory(&record.directory).map_err(|error| error.code())?;
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::DirectoryOpened,
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::DirectoryOpened
         }
         Job::UpdateNote { name, note } => {
             update_backup_note(root, &name, &note).map_err(|error| error.code())?;
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::NoteUpdated(name),
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::NoteUpdated(name)
         }
         Job::DeleteBackup { name } => {
             delete_named_backup(root, &name).map_err(|error| error.code())?;
-            let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
-            Ok((
-                UiStatus::BackupDeleted(name),
-                listing.records,
-                listing.invalid_count,
-            ))
+            UiStatus::BackupDeleted(name)
         }
         Job::Shutdown => unreachable!(),
-    }
+    };
+    let listing = list_backups_with_diagnostics(root).map_err(|error| error.code())?;
+    Ok((status, listing))
+}
+
+fn comparison_label(record: &BackupRecord) -> String {
+    format!(
+        "{} ({})",
+        format_local_timestamp(record.created_at_unix_ms),
+        record.name
+    )
 }
 
 #[cfg(test)]
@@ -246,20 +223,57 @@ mod tests {
         let older = create_backup(&root, &snapshot(100, false)).unwrap();
         let newer = create_backup(&root, &snapshot(200, true)).unwrap();
 
-        let (status, _, _) = handle_job(
+        let (status, _) = handle_job(
             &root,
             Job::CompareBackups {
-                first: newer.name,
-                second: older.name,
+                first: newer.name.clone(),
+                second: older.name.clone(),
             },
         )
         .unwrap();
 
-        let UiStatus::Comparison(summary) = status else {
+        let UiStatus::Comparison {
+            summary,
+            baseline,
+            current,
+        } = status
+        else {
             panic!("comparison status was not returned");
         };
         assert_eq!(summary.added, 1);
         assert_eq!(summary.removed, 0);
+        assert!(baseline.contains(&older.name));
+        assert!(current.unwrap().contains(&newer.name));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn compare_backups_orders_timestamp_collisions_independently_of_selection_order() {
+        let root = temp_dir("compare-collision");
+        let older = create_backup(&root, &snapshot(100, false)).unwrap();
+        let newer = create_backup(&root, &snapshot(100, true)).unwrap();
+        for (first, second) in [(&older.name, &newer.name), (&newer.name, &older.name)] {
+            let (status, _) = handle_job(
+                &root,
+                Job::CompareBackups {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+            )
+            .unwrap();
+            let UiStatus::Comparison {
+                summary,
+                baseline,
+                current,
+            } = status
+            else {
+                panic!("comparison status was not returned");
+            };
+            assert_eq!(summary.added, 1);
+            assert_eq!(summary.removed, 0);
+            assert!(baseline.contains(&older.name));
+            assert!(current.unwrap().contains(&newer.name));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -269,7 +283,7 @@ mod tests {
         let selected = create_backup(&root, &snapshot(100, false)).unwrap();
         let kept = create_backup(&root, &snapshot(200, true)).unwrap();
 
-        let (status, records, _) = handle_job(
+        let (status, listing) = handle_job(
             &root,
             Job::DeleteBackup {
                 name: selected.name.clone(),
@@ -278,7 +292,28 @@ mod tests {
         .unwrap();
 
         assert_eq!(status, UiStatus::BackupDeleted(selected.name));
-        assert_eq!(records, vec![kept]);
+        assert_eq!(listing.records, vec![kept]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn delete_job_can_recover_an_imported_over_capacity_history() {
+        let root = temp_dir("delete-over-capacity");
+        let selected = create_backup(&root, &snapshot(100, false)).unwrap();
+        for index in 0..crate::storage::MAX_BACKUP_CANDIDATES {
+            fs::create_dir(root.join(format!("env-backup-invalid-{index}"))).unwrap();
+        }
+        let (status, listing) = handle_job(
+            &root,
+            Job::DeleteBackup {
+                name: selected.name.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(status, UiStatus::BackupDeleted(selected.name));
+        assert!(listing.records.is_empty());
+        assert_eq!(listing.invalid_count, crate::storage::MAX_BACKUP_CANDIDATES);
+        assert!(!selected.directory.exists());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -288,7 +323,7 @@ mod tests {
         let selected = create_backup(&root, &snapshot(100, false)).unwrap();
         let kept = create_backup(&root, &snapshot(200, true)).unwrap();
 
-        let (status, records, _) = handle_job(
+        let (status, listing) = handle_job(
             &root,
             Job::UpdateNote {
                 name: selected.name.clone(),
@@ -299,7 +334,8 @@ mod tests {
 
         assert_eq!(status, UiStatus::NoteUpdated(selected.name.clone()));
         assert_eq!(
-            records
+            listing
+                .records
                 .iter()
                 .find(|record| record.name == selected.name)
                 .unwrap()
@@ -307,7 +343,8 @@ mod tests {
             "系统升级前"
         );
         assert_eq!(
-            records
+            listing
+                .records
                 .iter()
                 .find(|record| record.name == kept.name)
                 .unwrap()

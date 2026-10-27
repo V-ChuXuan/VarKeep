@@ -68,6 +68,13 @@ pub struct BackupRecord {
 pub struct BackupListing {
     pub records: Vec<BackupRecord>,
     pub invalid_count: usize,
+    pub invalid_backups: Vec<InvalidBackup>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvalidBackup {
+    pub name: String,
+    pub code: &'static str,
 }
 
 pub fn load_v2_snapshot(path: &Path) -> Result<Snapshot, StorageError> {
@@ -91,6 +98,22 @@ pub fn create_backup_with_language(
     ensure_no_reparse_components(root)?;
     fs::create_dir_all(root).map_err(|_| StorageError::new("backup_root_unavailable"))?;
     ensure_no_reparse_components(root)?;
+    let entries = read_bounded_root_entries(root)?;
+    let candidates = entries
+        .iter()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("env-backup-")
+        })
+        .count();
+    if candidates >= MAX_BACKUP_CANDIDATES {
+        return Err(StorageError::new("too_many_backup_candidates"));
+    }
+    if entries.len() >= MAX_ROOT_ENTRIES {
+        return Err(StorageError::new("too_many_backup_root_entries"));
+    }
     let stamp = snapshot.created_at_unix_ms;
     let final_name = unique_name(root, &format!("env-backup-{stamp}"));
     let final_path = root.join(&final_name);
@@ -129,11 +152,40 @@ pub fn list_backups(root: &Path) -> Result<Vec<BackupRecord>, StorageError> {
 }
 
 pub fn resolve_named_backup(root: &Path, name: &str) -> Result<BackupRecord, StorageError> {
-    list_backups_with_diagnostics(root)?
-        .records
-        .into_iter()
-        .find(|record| record.name == name)
-        .ok_or_else(|| StorageError::new("backup_not_found"))
+    Ok(resolve_named_snapshot(root, name)?.0)
+}
+
+pub fn resolve_named_snapshot(
+    root: &Path,
+    name: &str,
+) -> Result<(BackupRecord, Snapshot), StorageError> {
+    if !name.starts_with("env-backup-")
+        || name.contains(['/', '\\', ':'])
+        || name.ends_with(['.', ' '])
+    {
+        return Err(StorageError::new("backup_not_found"));
+    }
+    ensure_no_reparse_components(root)?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| StorageError::new("backup_root_unavailable"))?;
+    let path = root.join(name);
+    let snapshot =
+        validate_backup_directory(&path).map_err(|_| StorageError::new("backup_not_found"))?;
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|_| StorageError::new("backup_not_found"))?;
+    if canonical_path.parent() != Some(canonical_root.as_path()) {
+        return Err(StorageError::new("backup_not_found"));
+    }
+    let record = BackupRecord {
+        name: name.to_owned(),
+        note: read_backup_note(&path),
+        directory: path,
+        created_at_unix_ms: snapshot.created_at_unix_ms,
+        variable_count: snapshot.variables.len(),
+    };
+    Ok((record, snapshot))
 }
 
 pub fn list_backups_with_diagnostics(root: &Path) -> Result<BackupListing, StorageError> {
@@ -141,66 +193,39 @@ pub fn list_backups_with_diagnostics(root: &Path) -> Result<BackupListing, Stora
         return Ok(BackupListing::default());
     }
     ensure_no_reparse_components(root)?;
-    let canonical_root = root
-        .canonicalize()
-        .map_err(|_| StorageError::new("backup_root_unavailable"))?;
     let mut records = Vec::new();
     let mut invalid_count = 0usize;
-    let mut candidate_count = 0usize;
+    let mut invalid_backups = Vec::new();
     for entry in read_bounded_root_entries(root)? {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() || file_type.is_symlink() {
-            continue;
-        }
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with(".partial-") || !name.starts_with("env-backup-") {
             continue;
         }
-        candidate_count += 1;
-        if candidate_count > MAX_BACKUP_CANDIDATES {
-            return Err(StorageError::new("too_many_backup_candidates"));
-        }
-        let path = entry.path();
-        let metadata =
-            fs::symlink_metadata(&path).map_err(|_| StorageError::new("backup_read_failed"))?;
-        let canonical_path = path.canonicalize().ok();
-        let is_direct_child = canonical_path
-            .as_deref()
-            .and_then(Path::parent)
-            .is_some_and(|parent| parent == canonical_root);
-        if metadata.file_type().is_symlink()
-            || is_windows_reparse_point(&metadata)
-            || !is_direct_child
-        {
-            invalid_count += 1;
-            continue;
-        }
-        if let Ok(snapshot) = validate_backup_directory(&path) {
-            let note = read_backup_note(&path);
-            records.push(BackupRecord {
-                name,
-                directory: path,
-                created_at_unix_ms: snapshot.created_at_unix_ms,
-                variable_count: snapshot.variables.len(),
-                note,
-            });
+        if let Ok(record) = resolve_named_backup(root, &name) {
+            records.push(record);
         } else {
             invalid_count += 1;
+            let code = validate_backup_directory(&entry.path())
+                .err()
+                .map_or("backup_path_invalid", |error| error.code());
+            invalid_backups.push(InvalidBackup { name, code });
         }
     }
-    records.sort_by(|left, right| {
-        right
-            .created_at_unix_ms
-            .cmp(&left.created_at_unix_ms)
-            .then_with(|| backup_collision_index(right).cmp(&backup_collision_index(left)))
-            .then_with(|| right.name.cmp(&left.name))
-    });
+    records.sort_by(compare_backup_order);
+    invalid_backups.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(BackupListing {
         records,
         invalid_count,
+        invalid_backups,
     })
+}
+
+pub fn compare_backup_order(left: &BackupRecord, right: &BackupRecord) -> std::cmp::Ordering {
+    right
+        .created_at_unix_ms
+        .cmp(&left.created_at_unix_ms)
+        .then_with(|| backup_collision_index(right).cmp(&backup_collision_index(left)))
+        .then_with(|| right.name.cmp(&left.name))
 }
 
 fn backup_collision_index(record: &BackupRecord) -> u64 {
@@ -346,19 +371,8 @@ pub fn compare_named_backups(
     if baseline_name == current_name {
         return Err(StorageError::new("same_backup"));
     }
-    let listing = list_backups_with_diagnostics(root)?;
-    let baseline = listing
-        .records
-        .iter()
-        .find(|record| record.name == baseline_name)
-        .ok_or_else(|| StorageError::new("backup_not_found"))?;
-    let current = listing
-        .records
-        .iter()
-        .find(|record| record.name == current_name)
-        .ok_or_else(|| StorageError::new("backup_not_found"))?;
-    let baseline_snapshot = validate_backup_directory(&baseline.directory)?;
-    let current_snapshot = validate_backup_directory(&current.directory)?;
+    let (_, baseline_snapshot) = resolve_named_snapshot(root, baseline_name)?;
+    let (_, current_snapshot) = resolve_named_snapshot(root, current_name)?;
     Ok(compare_snapshots(
         &baseline_snapshot.variables,
         &current_snapshot.variables,
@@ -367,7 +381,6 @@ pub fn compare_named_backups(
 
 pub fn delete_named_backup(root: &Path, name: &str) -> Result<(), StorageError> {
     let record = resolve_named_backup(root, name)?;
-    validate_backup_directory(&record.directory)?;
     ensure_no_reparse_components(root)?;
     let canonical_root = root
         .canonicalize()
@@ -392,7 +405,6 @@ pub fn delete_named_backup(root: &Path, name: &str) -> Result<(), StorageError> 
 pub fn update_backup_note(root: &Path, name: &str, note: &str) -> Result<(), StorageError> {
     let note = normalize_note(note)?;
     let record = resolve_named_backup(root, name)?;
-    validate_backup_directory(&record.directory)?;
     let path = record.directory.join(NOTE_FILE);
 
     if note.is_empty() {
@@ -418,15 +430,26 @@ pub fn update_backup_note(root: &Path, name: &str, note: &str) -> Result<(), Sto
     {
         return Err(StorageError::new("backup_entry_reparse"));
     }
+    // Stage beside the backup directory so an interrupted edit cannot invalidate its layout.
+    let temporary = root.join(format!(
+        ".partial-note-{}-{}",
+        std::process::id(),
+        now_unix_ms()
+    ));
     let mut file = OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)
+        .create_new(true)
+        .open(&temporary)
         .map_err(|_| StorageError::new("note_write_failed"))?;
-    file.write_all(note.as_bytes())
-        .and_then(|()| file.sync_all())
-        .map_err(|_| StorageError::new("note_write_failed"))
+    let result = file
+        .write_all(note.as_bytes())
+        .and_then(|()| file.sync_all());
+    drop(file);
+    let result = result.and_then(|()| fs::rename(&temporary, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.map_err(|_| StorageError::new("note_write_failed"))
 }
 
 fn normalize_note(note: &str) -> Result<String, StorageError> {
@@ -752,6 +775,26 @@ mod tests {
         std::env::temp_dir().join(format!("varkeep-v2-{name}-{}", now_unix_ms()))
     }
 
+    #[cfg(windows)]
+    fn create_test_directory_link(target: &Path, link: &Path) {
+        if std::os::windows::fs::symlink_dir(target, link).is_ok() {
+            return;
+        }
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .expect("create synthetic junction");
+        assert!(
+            output.status.success(),
+            "synthetic reparse fixture could not be created"
+        );
+        assert!(is_windows_reparse_point(
+            &fs::symlink_metadata(link).unwrap()
+        ));
+    }
+
     fn snapshot() -> Snapshot {
         Snapshot::new_v2(
             123,
@@ -891,6 +934,52 @@ mod tests {
                 .code(),
             "backup_not_found"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_note_replacement_preserves_the_original_and_cleans_temporary_files() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let root = temp_dir("note-replacement-failure");
+        let record = create_backup(&root, &snapshot()).unwrap();
+        update_backup_note(&root, &record.name, "原备注").unwrap();
+        let note_path = record.directory.join(NOTE_FILE);
+        let lock = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&note_path)
+            .unwrap();
+        assert_eq!(
+            update_backup_note(&root, &record.name, "新的备注")
+                .unwrap_err()
+                .code(),
+            "note_write_failed"
+        );
+        drop(lock);
+        assert_eq!(fs::read_to_string(&note_path).unwrap(), "原备注");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&record.directory).unwrap().count(), 4);
+        assert_eq!(list_backups(&root).unwrap()[0].note, "原备注");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_backup_diagnostics_identify_the_candidate_and_reason() {
+        let root = temp_dir("invalid-diagnostics");
+        let record = create_backup(&root, &snapshot()).unwrap();
+        fs::write(
+            record.directory.join("restore/user.ps1"),
+            "# modified fixture",
+        )
+        .unwrap();
+        let listing = list_backups_with_diagnostics(&root).unwrap();
+        assert_eq!(listing.invalid_count, 1);
+        let diagnostics = format!("{listing:?}");
+        assert!(diagnostics.contains(&record.name));
+        assert!(diagnostics.contains("restore_script_mismatch"));
+        assert!(!diagnostics.contains("secret '$`"));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1094,13 +1183,93 @@ mod tests {
     fn backup_candidate_count_is_bounded() {
         let root = temp_dir("candidate-limit");
         fs::create_dir_all(&root).unwrap();
-        for index in 0..=MAX_BACKUP_CANDIDATES {
+        for index in 0..MAX_BACKUP_CANDIDATES {
             fs::create_dir(root.join(format!("env-backup-{index}"))).unwrap();
         }
         assert_eq!(
-            list_backups_with_diagnostics(&root).unwrap_err().code(),
+            create_backup(&root, &snapshot()).unwrap_err().code(),
             "too_many_backup_candidates"
         );
+        assert_eq!(fs::read_dir(&root).unwrap().count(), MAX_BACKUP_CANDIDATES);
+        assert_eq!(
+            list_backups_with_diagnostics(&root).unwrap().invalid_count,
+            MAX_BACKUP_CANDIDATES
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn overflowing_history_remains_visible_and_can_be_reduced() {
+        let root = temp_dir("overflow-recovery");
+        let first = create_backup(&root, &snapshot()).unwrap();
+        for index in 1..=MAX_BACKUP_CANDIDATES {
+            let target = root.join(format!("env-backup-imported-{index}"));
+            fs::create_dir_all(target.join("restore")).unwrap();
+            for file in REQUIRED_FILES {
+                fs::copy(first.directory.join(file), target.join(file)).unwrap();
+            }
+        }
+        let listing = list_backups_with_diagnostics(&root).unwrap();
+        assert_eq!(listing.records.len(), MAX_BACKUP_CANDIDATES + 1);
+        assert_eq!(listing.invalid_count, 0);
+        assert_eq!(
+            create_backup(&root, &snapshot()).unwrap_err().code(),
+            "too_many_backup_candidates"
+        );
+        delete_named_backup(&root, &first.name).unwrap();
+        delete_named_backup(&root, "env-backup-imported-1").unwrap();
+        create_backup(&root, &snapshot()).unwrap();
+        assert_eq!(list_backups(&root).unwrap().len(), MAX_BACKUP_CANDIDATES);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn named_access_ignores_oversized_or_corrupt_siblings() {
+        let root = temp_dir("named-independent");
+        let selected = create_backup(&root, &snapshot()).unwrap();
+        for index in 0..MAX_ROOT_ENTRIES {
+            fs::create_dir(root.join(format!("env-backup-invalid-{index}"))).unwrap();
+        }
+        assert_eq!(
+            list_backups_with_diagnostics(&root).unwrap_err().code(),
+            "too_many_backup_root_entries"
+        );
+        assert_eq!(
+            resolve_named_backup(&root, &selected.name).unwrap(),
+            selected
+        );
+        update_backup_note(&root, &selected.name, "synthetic").unwrap();
+        delete_named_backup(&root, &selected.name).unwrap();
+        assert_eq!(fs::read_dir(&root).unwrap().count(), MAX_ROOT_ENTRIES);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn named_resolution_rejects_path_components_and_invalid_artifacts() {
+        let root = temp_dir("named-boundary");
+        let selected = create_backup(&root, &snapshot()).unwrap();
+        for name in [
+            ".",
+            "..",
+            "../outside",
+            "env-backup-123/..",
+            "env-backup-123\\..",
+            "env-backup-123:stream",
+            "env-backup-123.",
+        ] {
+            assert_eq!(
+                resolve_named_backup(&root, name).unwrap_err().code(),
+                "backup_not_found"
+            );
+        }
+        fs::write(selected.directory.join("summary.md"), "tampered").unwrap();
+        assert_eq!(
+            resolve_named_backup(&root, &selected.name)
+                .unwrap_err()
+                .code(),
+            "backup_not_found"
+        );
+        assert!(selected.directory.is_dir());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1159,16 +1328,11 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn backup_root_reparse_point_is_rejected() {
-        use std::os::windows::fs::symlink_dir;
-
         let root = temp_dir("reparse");
         let target = root.join("target");
         let link = root.join("backups");
         fs::create_dir_all(&target).unwrap();
-        if symlink_dir(&target, &link).is_err() {
-            fs::remove_dir_all(root).unwrap();
-            return;
-        }
+        create_test_directory_link(&target, &link);
         assert_eq!(
             create_backup(&link, &snapshot()).unwrap_err().code(),
             "backup_path_reparse"
@@ -1180,21 +1344,29 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn backup_candidate_reparse_point_is_ignored() {
-        use std::os::windows::fs::symlink_dir;
-
         let root = temp_dir("candidate-reparse");
         let backups = root.join("backups");
         let target = root.join("outside");
         let link = backups.join("env-backup-junction");
         fs::create_dir_all(&backups).unwrap();
         fs::create_dir_all(&target).unwrap();
-        if symlink_dir(&target, &link).is_err() {
-            fs::remove_dir_all(root).unwrap();
-            return;
-        }
+        create_test_directory_link(&target, &link);
         let listing = list_backups_with_diagnostics(&backups).unwrap();
         assert!(listing.records.is_empty());
         assert_eq!(listing.invalid_count, 1);
+        assert_eq!(
+            resolve_named_backup(&backups, "env-backup-junction")
+                .unwrap_err()
+                .code(),
+            "backup_not_found"
+        );
+        assert_eq!(
+            delete_named_backup(&backups, "env-backup-junction")
+                .unwrap_err()
+                .code(),
+            "backup_not_found"
+        );
+        assert!(target.is_dir());
         fs::remove_dir(&link).unwrap();
         fs::remove_dir_all(root).unwrap();
     }

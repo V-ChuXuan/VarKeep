@@ -1,0 +1,2 @@
+# Compatibility fixtures preserve the exact bytes produced by v2.3.
+/v2/tests/fixtures/v2.3-backup/** -text whitespace=cr-at-eol

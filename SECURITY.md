@@ -4,7 +4,7 @@
 
 | Version | Support |
 | --- | --- |
-| VarKeep v2.3 | Supported |
+| VarKeep v2.4 | Supported |
 | PowerShell v1.1 | Supported |
 
 ## Sensitive data and threat model

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "createdAtUnixMs": 1700000000000,
+  "variables": [
+    {
+      "scope": "user",
+      "name": "DEMO_TOKEN",
+      "value": "synthetic-fixture-secret",
+      "kind": "string"
+    },
+    {
+      "scope": "user",
+      "name": "Path",
+      "value": "C:\\Tools;%SystemRoot%\\System32",
+      "kind": "expandString"
+    },
+    {
+      "scope": "system",
+      "name": "FIXTURE_VALUE",
+      "value": "synthetic '$`\r\nvalue",
+      "kind": "string"
+    }
+  ]
+}

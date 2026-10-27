@@ -81,6 +81,33 @@ using System.Runtime.InteropServices;
 public static class VarKeepIconResource {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern uint ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, uint count);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibraryEx(string file, IntPtr reserved, uint flags);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindResource(IntPtr module, IntPtr name, IntPtr type);
+    [DllImport("kernel32.dll")]
+    private static extern uint SizeofResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LockResource(IntPtr resource);
+    [DllImport("kernel32.dll")]
+    private static extern bool FreeLibrary(IntPtr module);
+    public static string ReadManifest(string file) {
+        // Load resources as data; never execute the application's entry point.
+        IntPtr module = LoadLibraryEx(file, IntPtr.Zero, 0x22);
+        if (module == IntPtr.Zero) throw new InvalidOperationException("Cannot load PE resources.");
+        try {
+            IntPtr resource = FindResource(module, new IntPtr(1), new IntPtr(24));
+            uint size = SizeofResource(module, resource);
+            if (resource == IntPtr.Zero || size == 0 || size > 65536) throw new InvalidOperationException("Invalid embedded manifest.");
+            IntPtr bytes = LockResource(LoadResource(module, resource));
+            if (bytes == IntPtr.Zero) throw new InvalidOperationException("Cannot read embedded manifest.");
+            byte[] content = new byte[checked((int)size)];
+            Marshal.Copy(bytes, content, 0, content.Length);
+            return System.Text.Encoding.UTF8.GetString(content).Trim('\0', '\uFEFF');
+        } finally { FreeLibrary(module); }
+    }
 }
 '@
     $iconGroupCount = [VarKeepIconResource]::ExtractIconEx($releaseExe, -1, $null, $null, 0)
@@ -91,11 +118,20 @@ public static class VarKeepIconResource {
     if ($versionInfo.ProductName -ne 'VarKeep' -or
         $versionInfo.FileDescription -ne 'VarKeep - Windows environment variable snapshots' -or
         $versionInfo.OriginalFilename -ne 'varkeep.exe' -or
-        $versionInfo.FileVersion -notlike '2.3.0*' -or
-        $versionInfo.ProductVersion -notlike '2.3.0*') {
+        $versionInfo.FileVersion -notlike '2.4.0*' -or
+        $versionInfo.ProductVersion -notlike '2.4.0*') {
         throw 'Release executable is missing VarKeep Windows file metadata.'
     }
     Write-Host 'PASS VarKeep PE icon and file metadata'
+
+    [xml] $embeddedManifest = [VarKeepIconResource]::ReadManifest($releaseExe)
+    $controls = $embeddedManifest.SelectNodes("//*[local-name()='assemblyIdentity' and @name='Microsoft.Windows.Common-Controls' and @version='6.0.0.0']")
+    $execution = $embeddedManifest.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+    $dpi = $embeddedManifest.SelectSingleNode("//*[local-name()='dpiAwareness']")
+    if ($controls.Count -ne 1 -or $execution.level -ne 'asInvoker' -or $dpi.InnerText -ne 'PerMonitorV2') {
+        throw 'The built executable is missing its native controls, privilege or DPI manifest.'
+    }
+    Write-Host 'PASS embedded native controls and DPI manifest'
 
     $sizeMiB = $bytes.Length / 1MB
     if ($sizeMiB -gt 40) {

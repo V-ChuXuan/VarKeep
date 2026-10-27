@@ -132,6 +132,7 @@ function Get-UiText {
             MenuRestore = "重新生成还原脚本（不执行）"
             MenuExit = "退出"
             NoBackups = "没有找到备份。"
+            BackupCapacityReached = "已达到 {0} 个备份候选目录的上限。请先手工整理旧备份，再创建新备份。"
             SelectBackup = "选择备份"
             OutputFolder = "备份输出目录"
             BackupLabel = "备份标签（可留空）"
@@ -180,6 +181,7 @@ function Get-UiText {
         MenuRestore = "Regenerate restore scripts (do not run)"
         MenuExit = "Exit"
         NoBackups = "No backups found."
+        BackupCapacityReached = "The limit of {0} backup candidate directories has been reached. Please organize old backups before creating another."
         SelectBackup = "Select backup"
         OutputFolder = "Output folder"
         BackupLabel = "Backup label (optional)"
@@ -311,7 +313,7 @@ function Show-BackupDirectorySummary {
     }
 }
 
-function Get-BackupDirectories {
+function Get-BackupCandidates {
     param(
         [Parameter(Mandatory = $true)]
         [string]$RootPath
@@ -340,6 +342,16 @@ function Get-BackupDirectories {
         $candidates.Add($entry)
     }
 
+    return $candidates.ToArray()
+}
+
+function Get-BackupDirectories {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RootPath
+    )
+
+    $candidates = @(Get-BackupCandidates -RootPath $RootPath)
     $validationText = Get-UiText -SelectedLanguage "en"
     return @(
         $candidates |
@@ -674,6 +686,7 @@ function Get-ProcessEnvironment {
 function Find-EnvValue {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [object[]]$Items,
         [Parameter(Mandatory = $true)]
         [string]$Name
@@ -696,7 +709,7 @@ function ConvertTo-EnvironmentMap {
 
     $map = @{}
     foreach ($item in $Items) {
-        $map[[string]$item.name] = [string]$item.value
+        $map[[string]$item.name] = $item
     }
 
     return $map
@@ -856,15 +869,20 @@ function Compare-EnvironmentScope {
     $removedNames = @($backupNames | Where-Object { -not $currentMap.ContainsKey($_) })
     $changedNames = @(
         $backupNames |
-            Where-Object { $currentMap.ContainsKey($_) -and $backupMap[$_] -ne $currentMap[$_] }
+            Where-Object {
+                $currentMap.ContainsKey($_) -and (
+                    [string]$backupMap[$_].value -cne [string]$currentMap[$_].value -or
+                    [string]$backupMap[$_].kind -cne [string]$currentMap[$_].kind
+                )
+            }
     )
     $added = if ($IncludeValues) {
-        @($addedNames | ForEach-Object { "{0} | current: {1}" -f $_, (ConvertTo-ReportValue -Value $currentMap[$_]) })
+        @($addedNames | ForEach-Object { "{0} | current: {1}" -f $_, (ConvertTo-ReportValue -Value $currentMap[$_].value) })
     } else {
         $addedNames
     }
     $removed = if ($IncludeValues) {
-        @($removedNames | ForEach-Object { "{0} | backup: {1}" -f $_, (ConvertTo-ReportValue -Value $backupMap[$_]) })
+        @($removedNames | ForEach-Object { "{0} | backup: {1}" -f $_, (ConvertTo-ReportValue -Value $backupMap[$_].value) })
     } else {
         $removedNames
     }
@@ -874,8 +892,8 @@ function Compare-EnvironmentScope {
                 ForEach-Object {
                     "{0} | backup: {1} | current: {2}" -f `
                         $_, `
-                        (ConvertTo-ReportValue -Value $backupMap[$_]), `
-                        (ConvertTo-ReportValue -Value $currentMap[$_])
+                        (ConvertTo-ReportValue -Value $backupMap[$_].value), `
+                        (ConvertTo-ReportValue -Value $currentMap[$_].value)
                 }
         )
     } else {
@@ -1278,6 +1296,9 @@ function Invoke-EnvironmentBackup {
     )
 
     $text = Get-UiText -SelectedLanguage $SelectedLanguage
+    if (@(Get-BackupCandidates -RootPath $BackupOutputRoot).Count -ge $script:MaxBackupCandidates) {
+        throw ($text.BackupCapacityReached -f $script:MaxBackupCandidates)
+    }
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $safeLabel = if ([string]::IsNullOrWhiteSpace($BackupLabel)) {
         ""
