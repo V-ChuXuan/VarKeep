@@ -105,6 +105,4 @@ See the [v2 development guide](v2/README.md#从源码开发) for GUI development
 
 VarKeep source is released under the [MIT License](LICENSE).
 
-The GUI uses native Windows controls and requires no additional UI attribution component. Release archives retain the [third-party notices](v2/THIRD-PARTY-NOTICES.md) and [dependency license texts](v2/THIRD-PARTY-LICENSES.txt).
-
 <p align="center"><sub>If VarKeep helps you, a ⭐ can help others with the same need discover it.</sub></p>

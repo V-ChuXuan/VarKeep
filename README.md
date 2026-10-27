@@ -105,6 +105,4 @@ pwsh -NoProfile -File .\scripts\package-release.ps1
 
 VarKeep 源码采用 [MIT License](LICENSE)。
 
-GUI 使用 Windows 原生控件，无需额外的界面署名组件。发布包保留 [第三方说明](v2/THIRD-PARTY-NOTICES.md) 和 [依赖许可证文本](v2/THIRD-PARTY-LICENSES.txt)。
-
 <p align="center"><sub>如果 VarKeep 对你有帮助，欢迎点亮 ⭐，让更多有同样需求的人发现它。</sub></p>
