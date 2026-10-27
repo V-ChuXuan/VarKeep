@@ -1,2 +1,5 @@
 # Compatibility fixtures preserve the exact bytes produced by v2.3.
 /v2/tests/fixtures/v2.3-backup/** -text whitespace=cr-at-eol
+
+# The generated inventory uses LF so checkout preserves its reproducible bytes.
+/v2/THIRD-PARTY-LICENSES.txt text eol=lf
